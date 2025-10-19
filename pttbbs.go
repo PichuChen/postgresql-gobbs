@@ -94,7 +94,7 @@ func (b *BoardRecord) BoardID() string {
 }
 
 func (c *Connector) ReadBoardRecordsFile(path string) ([]bbs.BoardRecord, error) {
-	stmt := `SELECT name, bid, extra FROM boards`
+	stmt := `SELECT name, bid, extra FROM boards ORDER BY name ASC`
 	rows, err := c.db.Query(stmt)
 	if err != nil {
 		slog.Error("Failed to query database", "error", err)
