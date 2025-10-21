@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"database/sql"
@@ -44,6 +45,34 @@ func (c *Connector) Open(dataSourceName string) error {
 	}
 	slog.Info("Connected to database successfully")
 	c.home = dataSourceName
+	// Create necessary tables if they do not exist
+	if err := createBoardTable(c.db); err != nil {
+		slog.Error("Failed to create necessary tables", "error", err)
+		return fmt.Errorf("failed to create necessary tables: %w", err)
+	}
+	return nil
+}
+
+func createBoardTable(db *sql.DB) error {
+	stmt := `
+		CREATE TABLE IF NOT EXISTS boards (
+			name TEXT NOT NULL PRIMARY KEY,
+			bid INTEGER,
+			extra JSONB DEFAULT '{}',
+			created_at TIMESTAMP DEFAULT NOW(),
+			updated_at TIMESTAMP DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS idx_board_bid ON boards (bid);`
+	_, err := db.Exec(stmt)
+	if err != nil {
+		if strings.Contains(err.Error(), "pq: must be owner of table boards") {
+			slog.Warn("User is not the owner of the boards table", "error", err)
+			return nil
+		}
+		slog.Error("Error creating boards table", "err", err)
+		return fmt.Errorf("error creating boards table: %w", err)
+	}
+	slog.Info("Boards table created successfully")
 	return nil
 }
 
@@ -80,18 +109,18 @@ func (c *Connector) GetBoardRecordsPath() (string, error) {
 }
 
 type BoardRecord struct {
-	bbs.UnimplementedBoardRecord
+	// bbs.UnimplementedBoardRecord
 	name  string
 	bid   int // it should be index of original .BRD file
 	extra map[string]interface{}
 }
 
-func (b *BoardRecord) Title() string {
-	return b.extra["Title"].(string)
-}
-func (b *BoardRecord) BoardID() string {
-	return b.name
-}
+func (u *BoardRecord) BoardName() string { return u.name }
+func (u *BoardRecord) BoardID() uint32   { return uint32(u.bid) }
+func (u *BoardRecord) Title() string     { return u.extra["Title"].(string) }
+func (u *BoardRecord) IsClass() bool     { return u.extra["IsGroup"].(bool) }
+func (u *BoardRecord) ClassID() string   { return u.extra["Bclass"].(string) }
+func (u *BoardRecord) BM() []string      { return []string{} }
 
 func (c *Connector) ReadBoardRecordsFile(path string) ([]bbs.BoardRecord, error) {
 	stmt := `SELECT name, bid, extra FROM boards ORDER BY name ASC`
